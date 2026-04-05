@@ -1,7 +1,7 @@
 import Terrain from './Terrain';
 import Trees from './Trees';
 
-export default function Scene() {
+export default function Scene({ seed }) {
   return (
     <>
       <ambientLight intensity={0.45} />
@@ -20,7 +20,7 @@ export default function Scene() {
       />
 
       <Terrain size={100} />
-      <Trees terrainSize={100} count={100} modelPath="/Assets/Models/pine_tree.glb" />
+      <Trees terrainSize={100} count={100} modelPath="/Assets/Models/pine_tree.glb" seed={seed} />
     </>
   );
 }
