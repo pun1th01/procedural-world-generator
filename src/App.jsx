@@ -23,12 +23,12 @@ export default function App() {
 
   return (
     <>
-      <Canvas camera={{ position: [18, 14, 18], fov: 50 }} shadows>
+      <Canvas camera={{ position: [130, 95, 135], fov: 48 }} shadows>
         <color attach="background" args={['#c8e6ff']} />
         <Suspense fallback={null}>
           <Scene seed={seed} />
         </Suspense>
-        <OrbitControls enableDamping dampingFactor={0.08} target={[0, 0, 0]} />
+        <OrbitControls enableDamping dampingFactor={0.08} target={[0, 22, 0]} />
       </Canvas>
 
       {panelState === 'open' && (

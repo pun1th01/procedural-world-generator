@@ -1,72 +1,217 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import { ALPINE_TERRAIN, TerrainGenerator, mulberry32 } from '../utils/terrainMath';
 
-function mulberry32(seed) {
-  let t = seed >>> 0;
+export default function Trees({
+  terrainSize = ALPINE_TERRAIN.worldSize,
+  count = 260,
+  modelPath,
+  seed = 42
+}) {
 
-  return function random() {
-    t += 0x6d2b79f5;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
-}
+  const { nodes } = useGLTF(modelPath);
 
-function createRandomTrees(count, terrainSize, seed) {
-  const random = mulberry32(seed);
-  const half = terrainSize / 2;
+  // Grab ALL meshes from GLB
+  const treeMeshes = useMemo(() => {
 
-  return Array.from({ length: count }, () => {
-    const x = (random() - 0.5) * terrainSize;
-    const z = (random() - 0.5) * terrainSize;
-    const rotationY = random() * Math.PI * 2;
-    const scale = 0.8 + random() * 0.4;
+    const meshes = Object.values(nodes).filter(
+      (node) => node.isMesh
+    );
 
-    return {
-      position: [THREE.MathUtils.clamp(x, -half, half), 0, THREE.MathUtils.clamp(z, -half, half)],
-      rotationY,
-      scale,
-    };
-  });
-}
+    const foliageColors = [
+      new THREE.Color('#234434'),
+      new THREE.Color('#2F5A46'),
+      new THREE.Color('#4F7A61')
+    ];
 
-export default function Trees({ terrainSize = 100, count = 100, modelPath, seed = 42 }) {
-  const { scene } = useGLTF(modelPath);
+    const trunkColor = new THREE.Color('#5B3A29');
+    let foliageIndex = 0;
 
-  useEffect(() => {
-    scene.traverse((child) => {
-      if (child.isMesh) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach((material) => {
-            if (material) {
-              material.needsUpdate = true;
-            }
-          });
-        } else if (child.material) {
-          child.material.needsUpdate = true;
-        }
+    const tuneMaterial = (sourceMaterial) => {
+      const material = sourceMaterial.clone();
+      const materialName = material.name?.toLowerCase() ?? '';
+      const isTrunk =
+        materialName.includes('trunk') ||
+        materialName.includes('bark') ||
+        materialName.includes('wood');
 
-        console.log('[Trees] mesh material:', child.name, child.material);
+      if (material.color?.isColor) {
+        material.color.copy(
+          isTrunk
+            ? trunkColor
+            : foliageColors[foliageIndex++ % foliageColors.length]
+        );
       }
-    });
-  }, [scene]);
 
-  const trees = useMemo(() => createRandomTrees(count, terrainSize, seed), [count, terrainSize, seed]);
+      material.map = null;
+      material.side = THREE.DoubleSide;
+      material.transparent = false;
+      material.depthWrite = true;
+      material.roughness = isTrunk ? 0.62 : 0.38;
+      material.needsUpdate = true;
+
+      return material;
+    };
+
+    return meshes.map(mesh => {
+
+      // Clone material so we can safely modify it
+      const material = Array.isArray(mesh.material)
+        ? mesh.material.map(tuneMaterial)
+        : tuneMaterial(mesh.material);
+
+      return {
+        geometry: mesh.geometry,
+        material
+      };
+    });
+
+  }, [nodes]);
+
+  // Generate deterministic transforms
+  const matrices = useMemo(() => {
+
+    const results = [];
+
+    const dummy = new THREE.Object3D();
+
+    const generator = new TerrainGenerator(seed, { worldSize: terrainSize });
+
+    const rng = mulberry32(seed ^ 0x9e3779b9);
+
+    const spacing = 6.0;
+
+    const half = terrainSize / 2;
+
+    for (let x = -half + spacing; x < half - spacing; x += spacing) {
+
+      for (let z = -half + spacing; z < half - spacing; z += spacing) {
+
+        // organic jitter
+        const jitterX =
+          x + (rng() - 0.5) * spacing;
+
+        const jitterZ =
+          z + (rng() - 0.5) * spacing;
+
+        if (rng() > 0.22) continue;
+
+        const forestMask =
+          generator.noise2D(
+            jitterX * 0.009,
+            jitterZ * 0.009
+          );
+
+        if (forestMask <= 0.22) continue;
+
+        const sample =
+          generator.sample(
+            jitterX,
+            jitterZ
+          );
+
+        const { slope } =
+          generator.getNormalAndSlope(
+            jitterX,
+            jitterZ
+          );
+
+        const finalY = sample.height;
+
+        if (
+          finalY > 34 ||
+          slope < 0.78
+        ) continue;
+
+        if (
+          sample.mountainCore > 0.36 ||
+          sample.mountainMask > 0.72
+        ) continue;
+
+        const scale =
+          0.38 + rng() * 0.32;
+
+        dummy.position.set(
+          jitterX,
+          finalY,
+          jitterZ
+        );
+
+        dummy.position.y +=
+          rng() * 0.15;
+
+        dummy.rotation.y =
+          rng() * Math.PI * 2;
+
+        dummy.scale.set(
+          scale * (0.92 + rng() * 0.16),
+          scale * (0.95 + rng() * 0.22),
+          scale * (0.92 + rng() * 0.16)
+        );
+
+        dummy.updateMatrix();
+
+        results.push(dummy.matrix.clone());
+
+        if (results.length >= count) {
+          return results;
+        }
+      }
+    }
+
+    return results;
+
+  }, [terrainSize, count, seed]);
+
+  if (treeMeshes.length === 0) return null;
 
   return (
     <group>
-      {trees.map((tree, index) => (
-        <group
+      {treeMeshes.map((meshData, index) => (
+        <InstancedTreeMesh
           key={index}
-          position={tree.position}
-          rotation={[0, tree.rotationY, 0]}
-          scale={[tree.scale, tree.scale, tree.scale]}
-        >
-          <primitive object={scene.clone()} dispose={null} />
-        </group>
+          geometry={meshData.geometry}
+          material={meshData.material}
+          matrices={matrices}
+        />
       ))}
     </group>
+  );
+}
+
+function InstancedTreeMesh({
+  geometry,
+  material,
+  matrices
+}) {
+
+  const meshRef = useRef();
+
+  useEffect(() => {
+
+    if (!meshRef.current) return;
+
+    matrices.forEach((matrix, i) => {
+      meshRef.current.setMatrixAt(i, matrix);
+    });
+
+    meshRef.current.instanceMatrix.needsUpdate = true;
+
+  }, [matrices]);
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[
+        geometry,
+        material,
+        matrices.length
+      ]}
+      castShadow
+      receiveShadow
+      frustumCulled={false}
+    />
   );
 }
 
