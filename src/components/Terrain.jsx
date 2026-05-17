@@ -4,7 +4,7 @@ import { ALPINE_TERRAIN, TerrainGenerator } from '../utils/terrainMath';
 
 export default function Terrain({
   size = ALPINE_TERRAIN.worldSize,
-  segments = 180,
+  segments = 240, // Specifically increased subdivision for smoother grass terrain blending
   seed = 42
 }) {
 
@@ -65,7 +65,7 @@ export default function Terrain({
 
       roughness: 1.0,
       metalness: 0.0,
-      flatShading: true
+      flatShading: false // Disabled globally to allow hybrid custom normal shading
 
     });
 
@@ -117,6 +117,32 @@ export default function Terrain({
         varying vec3 vWorldPosition;
         varying vec3 vWorldNormal;
         varying vec3 vTerrainMasks;
+        `
+      );
+
+      // Interpolate between smooth normals (for flat grasslands) and flat normals (for sharp rocky mountains)
+      shader.fragmentShader = shader.fragmentShader.replace(
+
+        '#include <normal_fragment_begin>',
+
+        `
+        #include <normal_fragment_begin>
+
+        // Calculate procedural flat normal in view dimensions
+        vec3 fdx_pos = dFdx( vViewPosition );
+        vec3 fdy_pos = dFdy( vViewPosition );
+        vec3 computedFlatNormal = normalize( cross( fdx_pos, fdy_pos ) );
+
+        float mathSlope = dot(normalize(vWorldNormal), vec3(0.0, 1.0, 0.0));
+        
+        // Preserve standard flat shading precisely on mountains and visually steep cliffs.
+        float isMountain = smoothstep(0.25, 0.6, vTerrainMasks.x);
+        float isCliff = 1.0 - smoothstep(0.55, 0.8, mathSlope);
+        
+        // Final blend. Grasslands (0.0) get smooth shading, Mountains/Cliffs (1.0) get flat shading
+        float flatFactor = clamp(max(isMountain, isCliff), 0.0, 1.0);
+        
+        normal = normalize( mix(normal, computedFlatNormal, flatFactor) );
         `
       );
 
