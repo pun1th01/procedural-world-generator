@@ -7,6 +7,7 @@ export default function App() {
   const [seed, setSeed] = useState(42);
   const [seedInput, setSeedInput] = useState('42');
   const [panelState, setPanelState] = useState('open');
+  const [timeOfDay, setTimeOfDay] = useState(12); // Default to noon
 
   const applySeedFromInput = () => {
     const parsed = Number.parseInt(seedInput, 10);
@@ -24,9 +25,8 @@ export default function App() {
   return (
     <>
       <Canvas camera={{ position: [130, 95, 135], fov: 48 }} shadows>
-        <color attach="background" args={['#c8e6ff']} />
         <Suspense fallback={null}>
-          <Scene seed={seed} />
+          <Scene seed={seed} timeOfDay={timeOfDay} />
         </Suspense>
         <OrbitControls enableDamping dampingFactor={0.08} target={[0, 22, 0]} />
       </Canvas>
@@ -82,6 +82,47 @@ export default function App() {
             X
           </button>
         </div>
+      )}
+
+      {/* Time of Day Control Panel */}
+      {panelState !== 'closed' && (
+         <div
+           style={{
+             position: 'fixed',
+             bottom: 24,
+             left: '50%',
+             transform: 'translateX(-50%)',
+             padding: '12px 24px',
+             background: 'rgba(255, 255, 255, 0.9)',
+             border: '1px solid #d4d4d4',
+             borderRadius: 8,
+             fontFamily: 'sans-serif',
+             fontSize: 14,
+             color: '#1f2937',
+             display: 'flex',
+             flexDirection: 'column',
+             alignItems: 'center',
+             gap: 8,
+             zIndex: 9999,
+             width: 300
+           }}
+         >
+           <label style={{ fontWeight: 'bold' }}>Time of Day: {timeOfDay.toFixed(1)}h</label>
+           <input
+             type="range"
+             min="0"
+             max="24"
+             step="0.1"
+             value={timeOfDay}
+             onChange={(e) => setTimeOfDay(Number.parseFloat(e.target.value))}
+             style={{ width: '100%', cursor: 'pointer' }}
+           />
+           <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: '11px', color: '#666' }}>
+             <span>Midnight</span>
+             <span>Noon</span>
+             <span>Midnight</span>
+           </div>
+         </div>
       )}
 
       {panelState === 'minimized' && (
