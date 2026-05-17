@@ -13,7 +13,7 @@ export default function Trees({
   const { nodes } = useGLTF(modelPath);
 
   // Grab ALL meshes from GLB
-  const treeMeshes = useMemo(() => {
+  const parsedMeshes = useMemo(() => {
 
     const meshes = Object.values(nodes).filter(
       (node) => node.isMesh
@@ -28,13 +28,8 @@ export default function Trees({
     const trunkColor = new THREE.Color('#5B3A29');
     let foliageIndex = 0;
 
-    const tuneMaterial = (sourceMaterial) => {
+    const tuneMaterial = (sourceMaterial, isTrunk) => {
       const material = sourceMaterial.clone();
-      const materialName = material.name?.toLowerCase() ?? '';
-      const isTrunk =
-        materialName.includes('trunk') ||
-        materialName.includes('bark') ||
-        materialName.includes('wood');
 
       if (material.color?.isColor) {
         material.color.copy(
@@ -54,25 +49,46 @@ export default function Trees({
       return material;
     };
 
-    return meshes.map(mesh => {
+    const trunks = [];
+    const foliages = [];
 
-      // Clone material so we can safely modify it
+    meshes.forEach(mesh => {
+      const matName = Array.isArray(mesh.material)
+        ? (mesh.material[0]?.name ?? '').toLowerCase()
+        : (mesh.material?.name ?? '').toLowerCase();
+      
+      const meshName = (mesh.name ?? '').toLowerCase();
+
+      const isTrunk =
+        matName.includes('trunk') ||
+        matName.includes('bark') ||
+        matName.includes('wood') ||
+        meshName.includes('trunk') ||
+        meshName.includes('bark') ||
+        meshName.includes('wood');
+
       const material = Array.isArray(mesh.material)
-        ? mesh.material.map(tuneMaterial)
-        : tuneMaterial(mesh.material);
+        ? mesh.material.map(m => tuneMaterial(m, isTrunk))
+        : tuneMaterial(mesh.material, isTrunk);
 
-      return {
-        geometry: mesh.geometry,
-        material
-      };
+      if (isTrunk) {
+        trunks.push({ geometry: mesh.geometry, material });
+      } else {
+        foliages.push({ geometry: mesh.geometry, material });
+      }
     });
+
+    return { trunks, foliages };
 
   }, [nodes]);
 
-  // Generate deterministic transforms
-  const matrices = useMemo(() => {
-
-    const results = [];
+  // Generate deterministic transforms per mesh variant
+  const instancedData = useMemo(() => {
+    
+    const { trunks, foliages } = parsedMeshes;
+    const trunkMatrices = trunks.map(() => []);
+    const foliageMatrices = foliages.map(() => []);
+    let currentCount = 0;
 
     const dummy = new THREE.Object3D();
 
@@ -144,36 +160,61 @@ export default function Trees({
         dummy.rotation.y =
           rng() * Math.PI * 2;
 
+        // Apply uniform scaling so proportions remain exactly as designed
+        // and trunks do not poke through the foliage
+        const uniformScale = scale * (0.9 + rng() * 0.2);
         dummy.scale.set(
-          scale * (0.92 + rng() * 0.16),
-          scale * (0.95 + rng() * 0.22),
-          scale * (0.92 + rng() * 0.16)
+          uniformScale,
+          uniformScale,
+          uniformScale
         );
 
         dummy.updateMatrix();
 
-        results.push(dummy.matrix.clone());
+        // Select ONE matching variant instead of mixing trunks and foliages
+        const maxVariants = Math.max(trunks.length, foliages.length);
+        const variantIdx = maxVariants > 0 ? Math.floor(rng() * maxVariants) : 0;
 
-        if (results.length >= count) {
-          return results;
+        if (trunks.length > 0) {
+          trunkMatrices[variantIdx % trunks.length].push(dummy.matrix.clone());
+        }
+        
+        if (foliages.length > 0) {
+          foliageMatrices[variantIdx % foliages.length].push(dummy.matrix.clone());
+        }
+
+        currentCount++;
+
+        if (currentCount >= count) {
+          return { trunkMatrices, foliageMatrices };
         }
       }
     }
 
-    return results;
+    return { trunkMatrices, foliageMatrices };
 
-  }, [terrainSize, count, seed]);
+  }, [parsedMeshes, terrainSize, count, seed]);
 
-  if (treeMeshes.length === 0) return null;
+  if (!instancedData) return null;
+  const { trunks, foliages } = parsedMeshes;
+  const { trunkMatrices, foliageMatrices } = instancedData;
 
   return (
     <group>
-      {treeMeshes.map((meshData, index) => (
+      {trunks.map((meshData, index) => (
         <InstancedTreeMesh
-          key={index}
+          key={`trunk-${index}`}
           geometry={meshData.geometry}
           material={meshData.material}
-          matrices={matrices}
+          matrices={trunkMatrices[index]}
+        />
+      ))}
+      {foliages.map((meshData, index) => (
+        <InstancedTreeMesh
+          key={`foliage-${index}`}
+          geometry={meshData.geometry}
+          material={meshData.material}
+          matrices={foliageMatrices[index]}
         />
       ))}
     </group>
