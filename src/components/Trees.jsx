@@ -3,252 +3,238 @@ import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { ALPINE_TERRAIN, TerrainGenerator, mulberry32 } from '../utils/terrainMath';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PALETTE
+// 4 foliage tones arranged low→high altitude.
+// Dark, desaturated, blue-shifted to match the moody sky and terrain.
+// Trunk is dark brown — never warm/orange.
+// ─────────────────────────────────────────────────────────────────────────────
+const FOLIAGE_COLORS = [
+  new THREE.Color('#2A4A34'), // valley — dark but readable
+  new THREE.Color('#325442'), // mid slope
+  new THREE.Color('#3A5C48'), // upland
+  new THREE.Color('#3E6248'), // near tree line
+];
+const TRUNK_COLOR = new THREE.Color('#38201A');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEDGE DETECTION CONSTANTS
+// Trees growing on terrace ledge edges look wrong — the terrain drops sharply
+// right next to them. We sample 4 neighbours and reject if the terrain falls
+// away faster than LEDGE_DROP_THRESHOLD within LEDGE_DIST units.
+// ─────────────────────────────────────────────────────────────────────────────
+const LEDGE_DIST      = 4.5;  // world units to check
+const LEDGE_THRESHOLD = 3.2;  // max acceptable height drop
+const LEDGE_DIST_NEAR = 2.2;
+
 export default function Trees({
   terrainSize = ALPINE_TERRAIN.worldSize,
-  count = 260,
+  count       = 260,
   modelPath,
-  seed = 42
+  seed        = 42,
 }) {
-
   const { nodes } = useGLTF(modelPath);
 
-  // Grab ALL meshes from GLB
+  // ── Parse GLB ──────────────────────────────────────────────────────────────
+  // Extract trunk and foliage geometries.
+  // Build one material per foliage color group (4 total) so altitude-based
+  // color variation works across instances — standard InstancedMesh only
+  // supports one material per draw call, so we render one call per color.
+  // ──────────────────────────────────────────────────────────────────────────
   const parsedMeshes = useMemo(() => {
+    const meshes = Object.values(nodes).filter(n => n.isMesh);
 
-    const meshes = Object.values(nodes).filter(
-      (node) => node.isMesh
-    );
-
-    const foliageColors = [
-      new THREE.Color('#234434'),
-      new THREE.Color('#2F5A46'),
-      new THREE.Color('#4F7A61')
-    ];
-
-    const trunkColor = new THREE.Color('#5B3A29');
-    let foliageIndex = 0;
-
-    const tuneMaterial = (sourceMaterial, isTrunk) => {
-      const material = sourceMaterial.clone();
-
-      if (material.color?.isColor) {
-        material.color.copy(
-          isTrunk
-            ? trunkColor
-            : foliageColors[foliageIndex++ % foliageColors.length]
-        );
-      }
-
-      material.map = null;
-      material.side = THREE.DoubleSide;
-      material.transparent = false;
-      material.depthWrite = true;
-      material.roughness = isTrunk ? 0.62 : 0.38;
-      material.needsUpdate = true;
-
-      return material;
-    };
-
-    const trunks = [];
-    const foliages = [];
+    const trunkGeos   = [];
+    const foliageGeos = [];
 
     meshes.forEach(mesh => {
-      const matName = Array.isArray(mesh.material)
-        ? (mesh.material[0]?.name ?? '').toLowerCase()
-        : (mesh.material?.name ?? '').toLowerCase();
-      
-      const meshName = (mesh.name ?? '').toLowerCase();
-
-      const isTrunk =
-        matName.includes('trunk') ||
-        matName.includes('bark') ||
-        matName.includes('wood') ||
-        meshName.includes('trunk') ||
-        meshName.includes('bark') ||
-        meshName.includes('wood');
-
-      const material = Array.isArray(mesh.material)
-        ? mesh.material.map(m => tuneMaterial(m, isTrunk))
-        : tuneMaterial(mesh.material, isTrunk);
-
-      if (isTrunk) {
-        trunks.push({ geometry: mesh.geometry, material });
-      } else {
-        foliages.push({ geometry: mesh.geometry, material });
-      }
+      const id = ((mesh.name ?? '') + (mesh.material?.name ?? '')).toLowerCase();
+      const isTrunk = /trunk|bark|wood/.test(id);
+      (isTrunk ? trunkGeos : foliageGeos).push(mesh.geometry);
     });
 
-    return { trunks, foliages };
+    // One material per foliage color — instances are distributed across them by altitude
+    const foliageMaterials = FOLIAGE_COLORS.map(color =>
+      new THREE.MeshStandardMaterial({
+        color:     color.clone(),
+        roughness: 0.82, // fully matte — no specular on pine foliage
+        metalness: 0,
+        side:      THREE.DoubleSide,
+      })
+    );
 
+    const trunkMaterial = new THREE.MeshStandardMaterial({
+      color:     TRUNK_COLOR.clone(),
+      roughness: 0.90,
+      metalness: 0,
+    });
+
+    return { trunkGeos, foliageGeos, foliageMaterials, trunkMaterial };
   }, [nodes]);
 
-  // Generate deterministic transforms per mesh variant
+  // ── Placement ──────────────────────────────────────────────────────────────
+  // Natural alpine pine placement rules:
+  //   1. getForestSuitability() is the primary gate — it combines valley mask,
+  //      slope flatness, below-tree-line, away-from-summits, and grove noise.
+  //      Using it as spawn probability means grove interiors are dense and
+  //      edges taper off naturally.
+  //   2. Ledge detection rejects flat points that sit at the edge of a drop.
+  //   3. Scale decreases with altitude — trees shrink near the tree line.
+  //   4. Color groups are assigned by altitude — lower = darker, cooler tone.
+  // ──────────────────────────────────────────────────────────────────────────
   const instancedData = useMemo(() => {
-    
-    const { trunks, foliages } = parsedMeshes;
-    const trunkMatrices = trunks.map(() => []);
-    const foliageMatrices = foliages.map(() => []);
-    let currentCount = 0;
+    const { foliageMaterials } = parsedMeshes;
+    const numColorGroups = foliageMaterials.length; // 4
 
-    const dummy = new THREE.Object3D();
+    // One matrix array per foliage color group + one for trunks
+    const colorGroupMatrices = Array.from({ length: numColorGroups }, () => []);
+    const trunkMatrices      = [];
 
     const generator = new TerrainGenerator(seed, { worldSize: terrainSize });
+    const rng       = mulberry32(seed ^ 0x9e3779b9);
+    const dummy     = new THREE.Object3D();
 
-    const rng = mulberry32(seed ^ 0x9e3779b9);
+    const half    = terrainSize / 2;
+    const spacing = 5.5;
+    let   placed  = 0;
 
-    const spacing = 6.0;
+    outerLoop:
+    for (let gx = -half + spacing; gx < half - spacing; gx += spacing) {
+      for (let gz = -half + spacing; gz < half - spacing; gz += spacing) {
 
-    const half = terrainSize / 2;
+        // ── Jitter the grid point ────────────────────────────────────────
+        const jx = gx + (rng() - 0.5) * spacing * 0.85;
+        const jz = gz + (rng() - 0.5) * spacing * 0.85;
 
-    for (let x = -half + spacing; x < half - spacing; x += spacing) {
+        // ── Suitability gate ─────────────────────────────────────────────
+        // Returns 0–1. Encodes: valleyMask × flatness × belowTreeLine ×
+        // awayFromSummits × groveMask (cluster noise).
+        // Using it as a spawn probability gives natural grove clustering —
+        // high-suitability zones are dense, edges thin out organically.
+        const suitability = generator.getForestSuitability(jx, jz);
+        if (suitability < 0.08)    continue; // outside any suitable zone
+        if (rng() > suitability)   continue; // probabilistic — creates clearings
 
-      for (let z = -half + spacing; z < half - spacing; z += spacing) {
+        // ── Height sample ────────────────────────────────────────────────
+        const sample = generator.sample(jx, jz);
+        const height = sample.height;
 
-        // organic jitter
-        const jitterX =
-          x + (rng() - 0.5) * spacing;
+        // ── Ledge detection ──────────────────────────────────────────────
+        // A terrace ledge is a locally flat point where the terrain drops
+        // sharply within a few units. Sample height in all 4 directions;
+        // if any neighbour is more than LEDGE_THRESHOLD below, skip.
+        const hN = generator.getHeight(jx,           jz + LEDGE_DIST);
+        const hS = generator.getHeight(jx,           jz - LEDGE_DIST);
+        const hE = generator.getHeight(jx + LEDGE_DIST, jz          );
+        const hW = generator.getHeight(jx - LEDGE_DIST, jz          );
 
-        const jitterZ =
-          z + (rng() - 0.5) * spacing;
+        const maxDrop = Math.max(
+          height - hN,
+          height - hS,
+          height - hE,
+          height - hW,
+        );
+        if (maxDrop > LEDGE_THRESHOLD) continue;
 
-        if (rng() > 0.22) continue;
+        // ── Slope double-check ───────────────────────────────────────────
+        // getForestSuitability already gates on ALPINE_TERRAIN.treeMinSlope
+        // but we re-check here as a hard guard after the ledge check, since
+        // any slope-passing ledge that sneaks through should still be caught.
+        const { slope } = generator.getNormalAndSlope(jx, jz);
+        if (slope < ALPINE_TERRAIN.treeMinSlope) continue;
 
-        const forestMask =
-          generator.noise2D(
-            jitterX * 0.009,
-            jitterZ * 0.009
-          );
+        // ── Altitude-based scale ─────────────────────────────────────────
+        // Pine trees near the tree line are stunted — shorter and sparser.
+        // altitudeFactor: 1.0 at height 0 → ~0.55 at treeLine (~34).
+        const altNorm       = Math.max(0, Math.min(1,
+          (height - 5) / (ALPINE_TERRAIN.treeLine - 5)
+        ));
+        const altitudeFactor= 1.0 - 0.42 * altNorm;
 
-        if (forestMask <= 0.22) continue;
+        // Suitability also nudges scale: grove interiors → full size,
+        // edges of a grove → slightly smaller, matching nature.
+        const suitabilityFactor = 0.78 + suitability * 0.22;
 
-        const sample =
-          generator.sample(
-            jitterX,
-            jitterZ
-          );
+        const baseScale  = 0.38 + rng() * 0.30;
+        const finalScale = baseScale * altitudeFactor * suitabilityFactor;
 
-        const { slope } =
-          generator.getNormalAndSlope(
-            jitterX,
-            jitterZ
-          );
-
-        const finalY = sample.height;
-
-        if (
-          finalY > 34 ||
-          slope < 0.78
-        ) continue;
-
-        if (
-          sample.mountainCore > 0.36 ||
-          sample.mountainMask > 0.72
-        ) continue;
-
-        const scale =
-          0.38 + rng() * 0.32;
-
-        dummy.position.set(
-          jitterX,
-          finalY,
-          jitterZ
+        // ── Foliage color by altitude ────────────────────────────────────
+        // 4 color groups: 0=darkest/lowest, 3=lightest/highest.
+        // Keeps valley trees distinctly darker than near-treeline trees.
+        const colorIdx = Math.min(
+          numColorGroups - 1,
+          Math.floor(altNorm * numColorGroups)
         );
 
-        dummy.position.y +=
-          rng() * 0.15;
-
-        dummy.rotation.y =
-          rng() * Math.PI * 2;
-
-        // Apply uniform scaling so proportions remain exactly as designed
-        // and trunks do not poke through the foliage
-        const uniformScale = scale * (0.9 + rng() * 0.2);
-        dummy.scale.set(
-          uniformScale,
-          uniformScale,
-          uniformScale
-        );
-
+        // ── Transform ────────────────────────────────────────────────────
+        dummy.position.set(jx, height, jz);
+        dummy.rotation.set(0, rng() * Math.PI * 2, 0); // yaw only — pines grow straight
+        dummy.scale.setScalar(finalScale);
         dummy.updateMatrix();
 
-        // Select ONE matching variant instead of mixing trunks and foliages
-        const maxVariants = Math.max(trunks.length, foliages.length);
-        const variantIdx = maxVariants > 0 ? Math.floor(rng() * maxVariants) : 0;
+        colorGroupMatrices[colorIdx].push(dummy.matrix.clone());
+        trunkMatrices.push(dummy.matrix.clone());
 
-        if (trunks.length > 0) {
-          trunkMatrices[variantIdx % trunks.length].push(dummy.matrix.clone());
-        }
-        
-        if (foliages.length > 0) {
-          foliageMatrices[variantIdx % foliages.length].push(dummy.matrix.clone());
-        }
-
-        currentCount++;
-
-        if (currentCount >= count) {
-          return { trunkMatrices, foliageMatrices };
-        }
+        placed++;
+        if (placed >= count) break outerLoop;
       }
     }
 
-    return { trunkMatrices, foliageMatrices };
-
+    return { colorGroupMatrices, trunkMatrices };
   }, [parsedMeshes, terrainSize, count, seed]);
 
-  if (!instancedData) return null;
-  const { trunks, foliages } = parsedMeshes;
-  const { trunkMatrices, foliageMatrices } = instancedData;
+  const { trunkGeos, foliageGeos, foliageMaterials, trunkMaterial } = parsedMeshes;
+  const { colorGroupMatrices, trunkMatrices } = instancedData;
+
+  // Use the first available geometry for each part (GLB may have one of each)
+  const foliageGeo = foliageGeos[0];
+  const trunkGeo   = trunkGeos[0];
 
   return (
     <group>
-      {trunks.map((meshData, index) => (
+      {/* Trunks — one instanced mesh, single dark brown material */}
+      {trunkGeo && trunkMatrices.length > 0 && (
         <InstancedTreeMesh
-          key={`trunk-${index}`}
-          geometry={meshData.geometry}
-          material={meshData.material}
-          matrices={trunkMatrices[index]}
+          key="trunk"
+          geometry={trunkGeo}
+          material={trunkMaterial}
+          matrices={trunkMatrices}
         />
-      ))}
-      {foliages.map((meshData, index) => (
-        <InstancedTreeMesh
-          key={`foliage-${index}`}
-          geometry={meshData.geometry}
-          material={meshData.material}
-          matrices={foliageMatrices[index]}
-        />
-      ))}
+      )}
+
+      {/* Foliage — one instanced mesh per color group (altitude tier) */}
+      {foliageGeo && foliageMaterials.map((mat, i) =>
+        colorGroupMatrices[i]?.length > 0 && (
+          <InstancedTreeMesh
+            key={`foliage-${i}`}
+            geometry={foliageGeo}
+            material={mat}
+            matrices={colorGroupMatrices[i]}
+          />
+        )
+      )}
     </group>
   );
 }
 
-function InstancedTreeMesh({
-  geometry,
-  material,
-  matrices
-}) {
-
+// ─────────────────────────────────────────────────────────────────────────────
+// INSTANCED MESH HELPER
+// ─────────────────────────────────────────────────────────────────────────────
+function InstancedTreeMesh({ geometry, material, matrices }) {
   const meshRef = useRef();
 
   useEffect(() => {
-
-    if (!meshRef.current) return;
-
-    matrices.forEach((matrix, i) => {
-      meshRef.current.setMatrixAt(i, matrix);
-    });
-
+    if (!meshRef.current || !matrices?.length) return;
+    matrices.forEach((m, i) => meshRef.current.setMatrixAt(i, m));
     meshRef.current.instanceMatrix.needsUpdate = true;
-
   }, [matrices]);
+
+  if (!matrices?.length) return null;
 
   return (
     <instancedMesh
       ref={meshRef}
-      args={[
-        geometry,
-        material,
-        matrices.length
-      ]}
+      args={[geometry, material, matrices.length]}
       castShadow
       receiveShadow
       frustumCulled={false}
