@@ -3,6 +3,7 @@ import { AdaptiveDpr, AdaptiveEvents, PerformanceMonitor, Preload } from '@react
 
 import Terrain from './Terrain';
 import Trees from './Trees';
+import GroundCover from './GroundCover';
 // import Water from './Water'; // uncomment when water is ready
 import DynamicSkyAndLight from './DynamicSkyAndLight';
 import { ALPINE_TERRAIN } from '../utils/terrainMath';
@@ -31,6 +32,8 @@ export default function Scene({ seed, timeOfDay = 12 }) {
 
   // Scale tree count to performance tier so low-end stays smooth
   const treeCount = [140, 200, 260][perfTier];
+  const grassCount = [500, 750, 950][perfTier];
+  const bushCount = [35, 55, 75][perfTier];
 
   return (
     <>
@@ -57,6 +60,13 @@ export default function Scene({ seed, timeOfDay = 12 }) {
 
       {/* ── Terrain ────────────────────────────────────────────────── */}
       <Terrain size={terrainSize} seed={seed} />
+
+      <GroundCover
+        terrainSize={terrainSize}
+        grassCount={grassCount}
+        bushCount={bushCount}
+        seed={seed}
+      />
 
       {/* ── Trees (async GLB — wrapped in Suspense) ────────────────── */}
       <Suspense fallback={<TreeLoadingFallback />}>
