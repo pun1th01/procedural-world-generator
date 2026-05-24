@@ -1,19 +1,148 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { useFrame } from '@react-three/fiber';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COLOR STOPS
+// Palette philosophy: cinematic, slightly desaturated, never cheerful.
+// Think: early autumn, 4am drives, fog over still water.
+// ─────────────────────────────────────────────────────────────────────────────
 const STOPS = [
-  { time: 0,  sky: '#02040f', fog: '#050a1f', sunColor: '#000000', sunIntensity: 0,   moonColor: '#8a99cc', moonIntensity: 0.8, ambient: '#10152a', ambientIntensity: 0.15 },
-  { time: 5,  sky: '#060e29', fog: '#0b1633', sunColor: '#ff8a5c', sunIntensity: 0.1, moonColor: '#8a99cc', moonIntensity: 0.3, ambient: '#1a223a', ambientIntensity: 0.18 },
-  { time: 6,  sky: '#ffb28c', fog: '#e69073', sunColor: '#ffa87a', sunIntensity: 0.9, moonColor: '#000000', moonIntensity: 0,   ambient: '#4a3d46', ambientIntensity: 0.3  },
-  { time: 8,  sky: '#a2d2ff', fog: '#b8cde0', sunColor: '#fff5d6', sunIntensity: 1.4, moonColor: '#000000', moonIntensity: 0,   ambient: '#dbefff', ambientIntensity: 0.4  },
-  { time: 12, sky: '#7db9e8', fog: '#92c5eb', sunColor: '#ffffff', sunIntensity: 1.8, moonColor: '#000000', moonIntensity: 0,   ambient: '#e6f2ff', ambientIntensity: 0.45 },
-  { time: 16, sky: '#a2d2ff', fog: '#b8cde0', sunColor: '#fff5d6', sunIntensity: 1.4, moonColor: '#000000', moonIntensity: 0,   ambient: '#dbefff', ambientIntensity: 0.4  },
-  { time: 18, sky: '#ffa384', fog: '#e88974', sunColor: '#ff7b54', sunIntensity: 1.0, moonColor: '#000000', moonIntensity: 0,   ambient: '#4a363b', ambientIntensity: 0.3  },
-  { time: 19, sky: '#422a4c', fog: '#351a3d', sunColor: '#a15b6d', sunIntensity: 0.2, moonColor: '#5c6da6', moonIntensity: 0.1, ambient: '#241b2a', ambientIntensity: 0.2  },
-  { time: 20, sky: '#050b1a', fog: '#0a1024', sunColor: '#000000', sunIntensity: 0,   moonColor: '#8a99cc', moonIntensity: 0.5, ambient: '#121524', ambientIntensity: 0.15 },
-  { time: 24, sky: '#02040f', fog: '#050a1f', sunColor: '#000000', sunIntensity: 0,   moonColor: '#8a99cc', moonIntensity: 0.8, ambient: '#10152a', ambientIntensity: 0.15 }
+  // 00:00 – deep night. indigo-black sky, cold moon.
+  {
+    time: 0,
+    skyZenith:  '#010209', skyHorizon: '#080d1e',
+    fog: '#05080f',
+    sunColor: '#000000',  sunIntensity: 0,
+    moonColor: '#a8b8d8', moonIntensity: 0.55,
+    ambient: '#0c1020',   ambientIntensity: 0.10,
+    hemiSky: '#0c1020',   hemiGround: '#040608', hemiIntensity: 0.08,
+  },
+  // 04:00 – dead of night, just before anything shifts.
+  {
+    time: 4,
+    skyZenith:  '#010210', skyHorizon: '#0b1128',
+    fog: '#07090f',
+    sunColor: '#000000',  sunIntensity: 0,
+    moonColor: '#a8b8d8', moonIntensity: 0.45,
+    ambient: '#0e1228',   ambientIntensity: 0.10,
+    hemiSky: '#0e1228',   hemiGround: '#040608', hemiIntensity: 0.08,
+  },
+  // 05:15 – civil twilight. that cold, lonely blue before dawn.
+  {
+    time: 5.25,
+    skyZenith:  '#0c1230', skyHorizon: '#6b3d38',
+    fog: '#2a1510',
+    sunColor: '#c05030',  sunIntensity: 0.04,
+    moonColor: '#7888b8', moonIntensity: 0.10,
+    ambient: '#1a1520',   ambientIntensity: 0.15,
+    hemiSky: '#1a1520',   hemiGround: '#100808', hemiIntensity: 0.10,
+  },
+  // 06:00 – sunrise. rose-gold but muted, not cheerful. fleeting.
+  {
+    time: 6,
+    skyZenith:  '#18244e', skyHorizon: '#c86844',
+    fog: '#9e5030',
+    sunColor: '#ff8850',  sunIntensity: 0.65,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#38282e',   ambientIntensity: 0.24,
+    hemiSky: '#38282e',   hemiGround: '#180c08', hemiIntensity: 0.18,
+  },
+  // 07:30 – golden hour. warm but still quiet. the world hasn't started yet.
+  {
+    time: 7.5,
+    skyZenith:  '#284e88', skyHorizon: '#c89060',
+    fog: '#a87848',
+    sunColor: '#ffc878',  sunIntensity: 1.05,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#b89878',   ambientIntensity: 0.30,
+    hemiSky: '#b89878',   hemiGround: '#302010', hemiIntensity: 0.22,
+  },
+  // 10:00 – mid-morning. cool, slightly overcast. not bright.
+  {
+    time: 10,
+    skyZenith:  '#3a6498', skyHorizon: '#8aaec8',
+    fog: '#90aac0',
+    sunColor: '#f0e8d8',  sunIntensity: 1.35,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#c8d8e8',   ambientIntensity: 0.34,
+    hemiSky: '#c8d8e8',   hemiGround: '#283020', hemiIntensity: 0.26,
+  },
+  // 12:00 – midday. cooler than you'd expect. thin cloud feeling.
+  {
+    time: 12,
+    skyZenith:  '#2e5888', skyHorizon: '#7ca0c0',
+    fog: '#88a0b8',
+    sunColor: '#ece4d8',  sunIntensity: 1.5,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#ccd8e8',   ambientIntensity: 0.36,
+    hemiSky: '#ccd8e8',   hemiGround: '#243020', hemiIntensity: 0.28,
+  },
+  // 15:00 – late afternoon. you start to feel the day slipping.
+  {
+    time: 15,
+    skyZenith:  '#3a6498', skyHorizon: '#8aaec8',
+    fog: '#90aac0',
+    sunColor: '#f0e8d8',  sunIntensity: 1.3,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#c8d8e8',   ambientIntensity: 0.33,
+    hemiSky: '#c8d8e8',   hemiGround: '#283020', hemiIntensity: 0.25,
+  },
+  // 17:00 – golden evening. amber. warmth that's about to leave.
+  {
+    time: 17,
+    skyZenith:  '#284880', skyHorizon: '#c07838',
+    fog: '#9e6030',
+    sunColor: '#ffb850',  sunIntensity: 1.05,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#b88860',   ambientIntensity: 0.28,
+    hemiSky: '#b88860',   hemiGround: '#281408', hemiIntensity: 0.20,
+  },
+  // 18:30 – sunset. deep amber-red. slow and heavy.
+  {
+    time: 18.5,
+    skyZenith:  '#14143a', skyHorizon: '#b84020',
+    fog: '#7a2c10',
+    sunColor: '#ff4e18',  sunIntensity: 0.55,
+    moonColor: '#000000', moonIntensity: 0,
+    ambient: '#301820',   ambientIntensity: 0.20,
+    hemiSky: '#301820',   hemiGround: '#0e0606', hemiIntensity: 0.13,
+  },
+  // 19:30 – dusk. mauve-purple bruise across the sky. silence.
+  {
+    time: 19.5,
+    skyZenith:  '#0c0c28', skyHorizon: '#341828',
+    fog: '#180a14',
+    sunColor: '#000000',  sunIntensity: 0,
+    moonColor: '#6070a8', moonIntensity: 0.15,
+    ambient: '#181020',   ambientIntensity: 0.14,
+    hemiSky: '#181020',   hemiGround: '#070410', hemiIntensity: 0.10,
+  },
+  // 20:30 – full night settling. stars come.
+  {
+    time: 20.5,
+    skyZenith:  '#030714', skyHorizon: '#0c1020',
+    fog: '#050810',
+    sunColor: '#000000',  sunIntensity: 0,
+    moonColor: '#a0b0d0', moonIntensity: 0.48,
+    ambient: '#0e1020',   ambientIntensity: 0.11,
+    hemiSky: '#0e1020',   hemiGround: '#040608', hemiIntensity: 0.08,
+  },
+  // 24:00 – wraps back to 00:00.
+  {
+    time: 24,
+    skyZenith:  '#010209', skyHorizon: '#080d1e',
+    fog: '#05080f',
+    sunColor: '#000000',  sunIntensity: 0,
+    moonColor: '#a8b8d8', moonIntensity: 0.55,
+    ambient: '#0c1020',   ambientIntensity: 0.10,
+    hemiSky: '#0c1020',   hemiGround: '#040608', hemiIntensity: 0.08,
+  },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
 function lerpColor(c1, c2, t) {
   return new THREE.Color(c1).lerp(new THREE.Color(c2), t);
 }
@@ -21,136 +150,270 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-function getInterpolatedValues(timeOfDay) {
+function getValues(timeOfDay) {
   let lower = STOPS[0];
   let upper = STOPS[STOPS.length - 1];
   for (let i = 0; i < STOPS.length - 1; i++) {
-    if (timeOfDay >= STOPS[i].time && timeOfDay <= STOPS[i+1].time) {
+    if (timeOfDay >= STOPS[i].time && timeOfDay <= STOPS[i + 1].time) {
       lower = STOPS[i];
-      upper = STOPS[i+1];
+      upper = STOPS[i + 1];
       break;
     }
   }
-  
   const span = upper.time - lower.time;
-  const t = span === 0 ? 0 : (timeOfDay - lower.time) / span;
-
+  const t    = span === 0 ? 0 : (timeOfDay - lower.time) / span;
   return {
-    sky: lerpColor(lower.sky, upper.sky, t),
-    fog: lerpColor(lower.fog, upper.fog, t),
-    sunColor: lerpColor(lower.sunColor, upper.sunColor, t),
-    sunIntensity: lerp(lower.sunIntensity, upper.sunIntensity, t),
-    moonColor: lerpColor(lower.moonColor, upper.moonColor, t),
-    moonIntensity: lerp(lower.moonIntensity, upper.moonIntensity, t),
-    ambient: lerpColor(lower.ambient, upper.ambient, t),
+    skyZenith:        lerpColor(lower.skyZenith,  upper.skyZenith,  t),
+    skyHorizon:       lerpColor(lower.skyHorizon, upper.skyHorizon, t),
+    fog:              lerpColor(lower.fog,         upper.fog,        t),
+    sunColor:         lerpColor(lower.sunColor,    upper.sunColor,   t),
+    sunIntensity:     lerp(lower.sunIntensity,     upper.sunIntensity,  t),
+    moonColor:        lerpColor(lower.moonColor,   upper.moonColor,  t),
+    moonIntensity:    lerp(lower.moonIntensity,    upper.moonIntensity, t),
+    ambient:          lerpColor(lower.ambient,     upper.ambient,    t),
     ambientIntensity: lerp(lower.ambientIntensity, upper.ambientIntensity, t),
+    hemiSky:          lerpColor(lower.hemiSky,     upper.hemiSky,    t),
+    hemiGround:       lerpColor(lower.hemiGround,  upper.hemiGround, t),
+    hemiIntensity:    lerp(lower.hemiIntensity,    upper.hemiIntensity, t),
   };
 }
 
-function CustomStars({ opacity }) {
-  const [positions] = useMemo(() => {
-    const pos = [];
-    for(let i = 0; i < 1500; i++){
-      const r = 250 + Math.random() * 100;
-      const theta = 2 * Math.PI * Math.random();
-      const phi = Math.acos(2 * Math.random() - 1);
-      const x = r * Math.sin(phi) * Math.cos(theta);
-      const y = Math.abs(r * Math.sin(phi) * Math.sin(theta)) + 10; // keep above horizon
-      const z = r * Math.cos(phi);
-      pos.push(x, y, z);
-    }
-    return [new Float32Array(pos)];
-  }, []);
+// ─────────────────────────────────────────────────────────────────────────────
+// SKY DOME – gradient from horizon to zenith via fragment shader
+// ─────────────────────────────────────────────────────────────────────────────
+function SkyDome({ zenithColor, horizonColor }) {
+  const matRef = useRef();
+
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    uniforms: {
+      uZenith:  { value: new THREE.Color() },
+      uHorizon: { value: new THREE.Color() },
+    },
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uZenith;
+      uniform vec3 uHorizon;
+      varying vec3 vPos;
+      void main() {
+        // 0 at horizon, 1 at zenith — power curve keeps horizon band wide
+        float t = clamp(vPos.y / 450.0, 0.0, 1.0);
+        float blend = pow(t, 0.55);
+        gl_FragColor = vec4(mix(uHorizon, uZenith, blend), 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+  }), []);
+
+  // Live-update uniforms every frame — cheap, avoids React re-renders
+  useFrame(() => {
+    if (!matRef.current) return;
+    matRef.current.uniforms.uZenith.value.copy(zenithColor);
+    matRef.current.uniforms.uHorizon.value.copy(horizonColor);
+  });
 
   return (
-    <points>
-      <bufferGeometry>
-        <bufferAttribute attach={"attributes-position"} args={[positions, 3]} />
-      </bufferGeometry>
-      <pointsMaterial size={1.8} color="#ffffff" transparent opacity={opacity} fog={false} sizeAttenuation={true} />
-    </points>
+    <mesh>
+      <sphereGeometry args={[450, 32, 16]} />
+      <primitive object={material} ref={matRef} attach="material" />
+    </mesh>
   );
 }
 
-export default function DynamicSkyAndLight({ timeOfDay }) {
-  // Smoothly interpolate all environment variables based on time
-  const values = useMemo(() => getInterpolatedValues(timeOfDay), [timeOfDay]);
+// ─────────────────────────────────────────────────────────────────────────────
+// HORIZON GLOW – soft oval at the horizon during golden hours
+// ─────────────────────────────────────────────────────────────────────────────
+function HorizonGlow({ sunX, sunZ, color, intensity }) {
+  const matRef = useRef();
+  useFrame(() => {
+    if (matRef.current) matRef.current.opacity = intensity * 0.45;
+  });
+  if (intensity <= 0.01) return null;
+  return (
+    <mesh position={[sunX * 0.5, -10, sunZ * 0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[320, 80]} />
+      <meshBasicMaterial
+        ref={matRef}
+        color={color}
+        transparent
+        opacity={intensity * 0.45}
+        depthWrite={false}
+        fog={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
+  );
+}
 
-  // Map 0-24 time to an angle representation (6:00 is sunrise/east, 18:00 is sunset/west)
-  const sunAngle = (timeOfDay - 6) * (Math.PI / 12);
-  const distance = 260; // How far the sun/moon are from center
-  
-  const sunX = Math.cos(sunAngle) * -distance;
-  const sunY = Math.sin(sunAngle) * distance; 
-  const sunZ = -70; // Offset on Z to provide deeper shadows
-
-  const moonAngle = sunAngle + Math.PI; // Moon is directly opposite
-  const moonX = Math.cos(moonAngle) * -distance;
-  const moonY = Math.sin(moonAngle) * distance;
-  const moonZ = 70;
-
-  // Star visibility: visible evening through early morning
-  let starOpacity = 0;
-  if (timeOfDay < 5 || timeOfDay > 20) starOpacity = 1;
-  else if (timeOfDay >= 18 && timeOfDay <= 20) starOpacity = (timeOfDay - 18) / 2;
-  else if (timeOfDay >= 5 && timeOfDay <= 6) starOpacity = 1 - (timeOfDay - 5);
+// ─────────────────────────────────────────────────────────────────────────────
+// STARS – two layers: dense fine field + sparse bright points
+// Slight blue tint to feel cold and distant
+// ─────────────────────────────────────────────────────────────────────────────
+function Stars({ opacity }) {
+  const [fine, bright] = useMemo(() => {
+    const fineArr = [];
+    const brightArr = [];
+    for (let i = 0; i < 2200; i++) {
+      const r     = 340 + Math.random() * 80;
+      const theta = Math.PI * 2 * Math.random();
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = Math.abs(r * Math.cos(phi)) + 15;
+      const z = r * Math.sin(phi) * Math.sin(theta);
+      fineArr.push(x, y, z);
+    }
+    for (let i = 0; i < 280; i++) {
+      const r     = 300 + Math.random() * 60;
+      const theta = Math.PI * 2 * Math.random();
+      const phi   = Math.acos(2 * Math.random() - 1);
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = Math.abs(r * Math.cos(phi)) + 15;
+      const z = r * Math.sin(phi) * Math.sin(theta);
+      brightArr.push(x, y, z);
+    }
+    return [new Float32Array(fineArr), new Float32Array(brightArr)];
+  }, []);
 
   return (
     <>
-      <color attach="background" args={[values.sky]} />
-      <fog attach="fog" args={[values.fog, 100, 380]} />
-      
-      {/* Base environmental light */}
-      <ambientLight intensity={values.ambientIntensity} color={values.ambient} />
-      
-      {/* Sunlight */}
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[fine, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          size={1.1} color="#c8d4f0"
+          transparent opacity={opacity * 0.80}
+          fog={false} sizeAttenuation
+          depthWrite={false}
+        />
+      </points>
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[bright, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          size={2.8} color="#ffffff"
+          transparent opacity={opacity * 0.55}
+          fog={false} sizeAttenuation
+          depthWrite={false}
+        />
+      </points>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN EXPORT
+// ─────────────────────────────────────────────────────────────────────────────
+export default function DynamicSkyAndLight({ timeOfDay }) {
+  const v = useMemo(() => getValues(timeOfDay), [timeOfDay]);
+
+  // Sun arc: rises east (6h), sets west (18h)
+  const DIST = 270;
+  const sunAngle = (timeOfDay - 6) * (Math.PI / 12);
+  const sunX =  Math.cos(sunAngle) * -DIST;
+  const sunY =  Math.sin(sunAngle) *  DIST;
+  const sunZ = -80;
+
+  // Moon is opposite the sun
+  const moonAngle = sunAngle + Math.PI;
+  const moonX =  Math.cos(moonAngle) * -DIST;
+  const moonY =  Math.sin(moonAngle) *  DIST;
+  const moonZ =  80;
+
+  // Star opacity windows
+  let starOpacity = 0;
+  if      (timeOfDay < 5   || timeOfDay > 20.5) starOpacity = 1;
+  else if (timeOfDay >= 19.5 && timeOfDay <= 20.5) starOpacity = (timeOfDay - 19.5);
+  else if (timeOfDay >=  5   && timeOfDay <=  6  ) starOpacity = 1 - (timeOfDay - 5);
+
+  // Horizon glow intensity: peaks at sunrise and sunset
+  const glowHours = [
+    { center: 6,    spread: 1.5 },
+    { center: 18.5, spread: 1.5 },
+  ];
+  const glowIntensity = glowHours.reduce((acc, g) => {
+    const d = Math.abs(timeOfDay - g.center);
+    return Math.max(acc, Math.max(0, 1 - d / g.spread));
+  }, 0);
+
+  const sunVisible  = v.sunIntensity  > 0.01 && sunY  > -30;
+  const moonVisible = v.moonIntensity > 0.01 && moonY > -30;
+
+  return (
+    <>
+      {/* Sky gradient dome */}
+      <SkyDome zenithColor={v.skyZenith} horizonColor={v.skyHorizon} />
+
+      {/* Fog — pulls distant terrain into atmosphere */}
+      <fog attach="fog" args={[v.fog, 90, 360]} />
+
+      {/* Soft hemisphere: sky light from above, reflected ground light from below */}
+      <hemisphereLight
+        color={v.hemiSky}
+        groundColor={v.hemiGround}
+        intensity={v.hemiIntensity}
+      />
+
+      {/* Ambient fill — keeps shadows from going pure black */}
+      <ambientLight color={v.ambient} intensity={v.ambientIntensity} />
+
+      {/* Sun directional light */}
       <directionalLight
         castShadow
-        color={values.sunColor}
-        intensity={values.sunIntensity}
+        color={v.sunColor}
+        intensity={v.sunIntensity}
         position={[sunX, sunY, sunZ]}
         shadow-mapSize={[2048, 2048]}
         shadow-camera-near={1}
         shadow-camera-far={600}
-        shadow-camera-left={-220}
-        shadow-camera-right={220}
-        shadow-camera-top={220}
-        shadow-camera-bottom={-220}
+        shadow-camera-left={-240}
+        shadow-camera-right={240}
+        shadow-camera-top={240}
+        shadow-camera-bottom={-240}
         shadow-bias={-0.0005}
         shadow-normalBias={0.02}
       />
-      {values.sunIntensity > 0 && sunY > -30 && (
-         <mesh position={[sunX, sunY, sunZ]}>
-            <sphereGeometry args={[12, 16, 16]} />
-            <meshBasicMaterial color={values.sunColor} fog={false} />
-         </mesh>
+
+      {/* Sun disc */}
+      {sunVisible && (
+        <mesh position={[sunX, sunY, sunZ]}>
+          <sphereGeometry args={[10, 16, 16]} />
+          <meshBasicMaterial color={v.sunColor} fog={false} />
+        </mesh>
       )}
 
-      {/* Moonlight */}
-      <directionalLight
-        castShadow
-        color={values.moonColor}
-        intensity={values.moonIntensity}
-        position={[moonX, moonY, moonZ]}
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-near={1}
-        shadow-camera-far={600}
-        shadow-camera-left={-220}
-        shadow-camera-right={220}
-        shadow-camera-top={220}
-        shadow-camera-bottom={-220}
-        shadow-bias={-0.001}
-        shadow-normalBias={0.02}
+      {/* Soft glow bloom around sun/horizon at golden hours */}
+      <HorizonGlow
+        sunX={sunX} sunZ={sunZ}
+        color={v.sunColor}
+        intensity={sunVisible ? glowIntensity * v.sunIntensity * 0.7 : 0}
       />
-      {values.moonIntensity > 0 && moonY > -30 && (
-         <mesh position={[moonX, moonY, moonZ]}>
-            <sphereGeometry args={[9, 16, 16]} />
-            <meshBasicMaterial color="#ffffff" fog={false} />
-         </mesh>
+
+      {/* Moon light — cooler, dimmer, fills shadow side with blue-grey */}
+      <directionalLight
+        color={v.moonColor}
+        intensity={v.moonIntensity}
+        position={[moonX, moonY, moonZ]}
+      />
+
+      {/* Moon disc */}
+      {moonVisible && (
+        <mesh position={[moonX, moonY, moonZ]}>
+          <sphereGeometry args={[8, 16, 16]} />
+          <meshBasicMaterial color="#dce8ff" fog={false} />
+        </mesh>
       )}
 
-      {/* Night Sky Stars */}
-      {starOpacity > 0 && <CustomStars opacity={starOpacity} />}
+      {/* Stars */}
+      {starOpacity > 0.01 && <Stars opacity={starOpacity} />}
     </>
   );
 }
