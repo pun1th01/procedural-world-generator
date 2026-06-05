@@ -4,7 +4,7 @@ import { AdaptiveDpr, AdaptiveEvents, PerformanceMonitor, Preload } from '@react
 import Terrain from './Terrain';
 import Trees from './Trees';
 import GroundCover from './GroundCover';
-// import Water from './Water'; // uncomment when water is ready
+import Water from './Water';
 import DynamicSkyAndLight from './DynamicSkyAndLight';
 import { ALPINE_TERRAIN } from '../utils/terrainMath';
 
@@ -79,7 +79,7 @@ export default function Scene({ seed, timeOfDay = 12 }) {
       </Suspense>
 
       {/* ── Water (disabled until basin logic is implemented) ──────── */}
-      {/* <Water terrainSize={terrainSize} seed={seed} /> */}
+      <Water terrainSize={terrainSize} />
     </>
   );
 }

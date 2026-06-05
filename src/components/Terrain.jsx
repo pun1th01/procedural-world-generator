@@ -49,7 +49,8 @@ export default function Terrain({
 
       // Hard clamp prevents extreme noise accumulation spikes.
       // ridgedFbm stacking can push isolated vertices far beyond neighbours.
-      const height = Math.max(-18, Math.min(72, sample.height));
+      const rawHeight = Math.max(-18, Math.min(72, sample.height));
+      const height = rawHeight < -14 ? -14 : rawHeight;
 
       positions.setX(i, x);
       positions.setZ(i, z);
