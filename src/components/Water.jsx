@@ -22,11 +22,11 @@ const WaterMaterial = shaderMaterial(
       vec4 modelPosition = modelMatrix * vec4(position, 1.0);
 
       float elevation =
-        sin(modelPosition.x * 0.06 + uTime * 0.8) * 0.22 +
-        sin(modelPosition.z * 0.08 + uTime * 0.6) * 0.18 +
-        sin(modelPosition.x * 0.03 + modelPosition.z * 0.04 + uTime * 0.4) * 0.12;
+  (sin(modelPosition.x * 0.06 + uTime * 0.8) * 0.5 + 0.5) * 0.22 +
+  (sin(modelPosition.z * 0.08 + uTime * 0.6) * 0.5 + 0.5) * 0.18 +
+  (sin(modelPosition.x * 0.03 + modelPosition.z * 0.04 + uTime * 0.4) * 0.5 + 0.5) * 0.12;
 
-      modelPosition.y += elevation;
+modelPosition.y += elevation;
       vElevation = elevation;
 
       gl_Position = projectionMatrix * viewMatrix * modelPosition;

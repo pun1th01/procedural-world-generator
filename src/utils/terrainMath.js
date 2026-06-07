@@ -293,7 +293,7 @@ export class TerrainGenerator {
     const drainage       = Math.pow(clamp(drainageRaw), 2.1);
     const basinVariation = this.fbm(this.flowNoise, x + 300, z - 200, 0.0055, 3);
     const valleyMask     = clamp(lowlandMask * (0.66 + drainage * 0.34));
-    const carve          = valleyMask * (2.0 + drainage * 3.1 + (0.5 - basinVariation) * 0.9);
+    const carve          = valleyMask * (2.8 + drainage * 4.3 + (0.5 - basinVariation) * 1.3);
 
     return { valleyMask, drainage, carve, lowlandMask };
   }
