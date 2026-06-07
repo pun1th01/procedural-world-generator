@@ -179,6 +179,17 @@ export default function Terrain({
         );
         grass *= 0.78 + slope * 0.26;
 
+        // Submerged terrain / shore transition
+        vec3 muddySand = vec3(0.29, 0.25, 0.18);
+        grass = mix(muddySand, grass, smoothstep(-13.0, -10.0, altitude));
+
+        // Mud patches on lowland terrain
+        float mudMask = step(0.72, fract(faceID * 7.3));
+        vec3 mudColor = vec3(0.36, 0.27, 0.16);
+        if (vTerrainMasks.x < 0.3 && altitude >= -10.0 && altitude <= 8.0) {
+          grass = mix(grass, mudColor, mudMask * 0.55);
+        }
+
         // ── FROZEN GROUND (altitude transition) ───────────────────────────
         vec3 frozen = vec3(0.56, 0.63, 0.60);
 
