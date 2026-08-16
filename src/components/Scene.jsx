@@ -1,6 +1,6 @@
 import { Suspense, useState, useCallback } from 'react';
 import { AdaptiveDpr, AdaptiveEvents, PerformanceMonitor, Preload } from '@react-three/drei';
-
+import { useClickToSource, useOverlayStore, SelectionHighlight } from '@click-to-source/overlay';
 import Terrain from './Terrain';
 import Trees from './Trees';
 import GroundCover from './GroundCover';
@@ -35,8 +35,21 @@ export default function Scene({ seed, timeOfDay = 12 }) {
   const grassCount = [500, 750, 950][perfTier];
   const bushCount = [35, 55, 75][perfTier];
 
+  const resolveClick = useClickToSource();
+
+  const handlePointerUp = (e) => {
+    e.stopPropagation();
+    const resolved = resolveClick(e);
+    if (resolved) {
+      useOverlayStore.getState().select(resolved);
+    } else {
+      useOverlayStore.getState().clearSelection();
+    }
+  };
+
   return (
     <>
+      {/* <SelectionHighlight /> */}
       {/* Adaptive pixel ratio — lowers DPR when FPS drops, huge win on 2GB VRAM */}
       <AdaptiveDpr pixelated />
 
@@ -58,28 +71,30 @@ export default function Scene({ seed, timeOfDay = 12 }) {
       {/* ── Sky, lighting, fog ─────────────────────────────────────── */}
       <DynamicSkyAndLight timeOfDay={timeOfDay} />
 
-      {/* ── Terrain ────────────────────────────────────────────────── */}
-      <Terrain size={terrainSize} seed={seed} />
+      <group onPointerUp={handlePointerUp}>
+        {/* ── Terrain ────────────────────────────────────────────────── */}
+        <Terrain size={terrainSize} seed={seed} />
 
-      <GroundCover
-        terrainSize={terrainSize}
-        grassCount={grassCount}
-        bushCount={bushCount}
-        seed={seed}
-      />
-
-      {/* ── Trees (async GLB — wrapped in Suspense) ────────────────── */}
-      <Suspense fallback={<TreeLoadingFallback />}>
-        <Trees
+        <GroundCover
           terrainSize={terrainSize}
-          count={treeCount}
-          modelPath="/Assets/Models/pine_tree.glb"
+          grassCount={grassCount}
+          bushCount={bushCount}
           seed={seed}
         />
-      </Suspense>
 
-      {/* ── Water (disabled until basin logic is implemented) ──────── */}
-      <Water terrainSize={terrainSize} />
+        {/* ── Trees (async GLB — wrapped in Suspense) ────────────────── */}
+        <Suspense fallback={<TreeLoadingFallback />}>
+          <Trees
+            terrainSize={terrainSize}
+            count={treeCount}
+            modelPath="/Assets/Models/pine_tree.glb"
+            seed={seed}
+          />
+        </Suspense>
+
+        {/* ── Water (disabled until basin logic is implemented) ──────── */}
+        <Water terrainSize={terrainSize} />
+      </group>
     </>
   );
 }

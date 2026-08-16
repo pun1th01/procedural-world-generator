@@ -1,6 +1,7 @@
 import { Suspense, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import { GenerationTrace, useOverlayStore } from '@click-to-source/overlay';
 import Scene from './components/Scene';
 
 export default function App() {
@@ -8,7 +9,6 @@ export default function App() {
   const [seedInput, setSeedInput] = useState('42');
   const [panelState, setPanelState] = useState('open');
   const [timeOfDay, setTimeOfDay] = useState(12); // Default to noon
-
   const applySeedFromInput = () => {
     const parsed = Number.parseInt(seedInput, 10);
     if (!Number.isNaN(parsed)) {
@@ -22,14 +22,20 @@ export default function App() {
     setSeedInput(String(nextSeed));
   };
 
+  const handlePointerMissed = () => {
+    useOverlayStore.getState().clearSelection();
+  };
+
   return (
     <>
-      <Canvas camera={{ position: [130, 95, 135], fov: 48 }} shadows>
+      <Canvas camera={{ position: [130, 95, 135], fov: 48 }} shadows onPointerMissed={handlePointerMissed}>
         <Suspense fallback={null}>
           <Scene seed={seed} timeOfDay={timeOfDay} />
         </Suspense>
         <OrbitControls enableDamping dampingFactor={0.08} target={[0, 22, 0]} />
       </Canvas>
+      <GenerationTrace />
+
 
       {panelState === 'open' && (
         <div

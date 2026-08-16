@@ -9,11 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@click-to-source/core": "file:../click-to-source/packages/core",
+    "@click-to-source/overlay": "file:../click-to-source/packages/overlay",
+    "@click-to-source/shared": "file:../click-to-source/packages/shared",
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "simplex-noise": "^4.0.3",
     "three": "^0.173.0"
+  },
+  "overrides": {
+    "three": "$three"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

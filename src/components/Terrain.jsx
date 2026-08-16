@@ -16,7 +16,6 @@ export default function Terrain({
   segments = 240,
   seed     = 42,
 }) {
-
   // ───────────────────────────────────────────────────────────────────────────
   // GEOMETRY
   // ───────────────────────────────────────────────────────────────────────────
@@ -49,8 +48,10 @@ export default function Terrain({
 
       // Hard clamp prevents extreme noise accumulation spikes.
       // ridgedFbm stacking can push isolated vertices far beyond neighbours.
-      const rawHeight = Math.max(-26, Math.min(72, sample.height));
-      const height = rawHeight < -20 ? -20 : rawHeight;
+
+      const noiseFloor = -30, lakeBedLevel = -20;
+      const rawHeight = Math.max(noiseFloor, Math.min(72, sample.height));
+      const height = rawHeight < lakeBedLevel ? lakeBedLevel : rawHeight;
 
       positions.setX(i, x);
       positions.setZ(i, z);
@@ -63,8 +64,8 @@ export default function Terrain({
 
     positions.needsUpdate = true;
     geo.setAttribute('terrainMasks', new THREE.BufferAttribute(terrainMasks, 3));
-    geo.computeVertexNormals();
     geo = geo.toNonIndexed();
+    geo.computeVertexNormals();
 
     return geo;
   }, [size, segments, seed]);
@@ -162,8 +163,8 @@ export default function Terrain({
 
         // Per-face hash: faceNrm is constant per triangle → unique value per face.
         // Two channels for independent variation on color axes.
-        float faceID  = 0.5;
-        float faceID2 = 0.5;
+        float faceID  = fract(sin(dot(faceNrm.xz, vec2(12.9898, 78.233))) * 43758.5453);
+        float faceID2 = fract(sin(dot(faceNrm.xz, vec2(63.7264, 10.873))) * 23421.6312);
 
         // ── GRASS ─────────────────────────────────────────────────────────
         // faceID at 0.48 weight = strong per-face brightness swing (~38%).
@@ -251,6 +252,14 @@ export default function Terrain({
       geometry={geometry}
       material={material}
       receiveShadow
+      userData={{
+        sourceRef: {
+          file: 'src/components/Terrain.jsx',
+          function: 'Terrain',
+          line: 52, // points to the 'const noiseFloor = -26, lakeBedLevel = -20;' declaration
+          args: { noiseFloor: -26, lakeBedLevel: -20 },
+        }
+      }}
     />
   );
 }
