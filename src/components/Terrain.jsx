@@ -16,6 +16,9 @@ export default function Terrain({
   segments = 240,
   seed     = 42,
 }) {
+  // Generation parameters – single source of truth for both geometry and SourceRef.
+  const noiseFloor = -30, lakeBedLevel = -20;
+
   // ───────────────────────────────────────────────────────────────────────────
   // GEOMETRY
   // ───────────────────────────────────────────────────────────────────────────
@@ -49,7 +52,6 @@ export default function Terrain({
       // Hard clamp prevents extreme noise accumulation spikes.
       // ridgedFbm stacking can push isolated vertices far beyond neighbours.
 
-      const noiseFloor = -30, lakeBedLevel = -20;
       const rawHeight = Math.max(noiseFloor, Math.min(72, sample.height));
       const height = rawHeight < lakeBedLevel ? lakeBedLevel : rawHeight;
 
@@ -256,8 +258,8 @@ export default function Terrain({
         sourceRef: {
           file: 'src/components/Terrain.jsx',
           function: 'Terrain',
-          line: 52, // points to the 'const noiseFloor = -26, lakeBedLevel = -20;' declaration
-          args: { noiseFloor: -26, lakeBedLevel: -20 },
+          line: 20,
+          args: { noiseFloor, lakeBedLevel },
         }
       }}
     />
