@@ -89,6 +89,8 @@ export default function Trees({
     // One matrix array per foliage color group + one for trunks
     const colorGroupMatrices = Array.from({ length: numColorGroups }, () => []);
     const trunkMatrices      = [];
+    const colorGroupSourceRefs = Array.from({ length: numColorGroups }, () => []);
+    const trunkSourceRefs      = [];
 
     const generator = new TerrainGenerator(seed, { worldSize: terrainSize });
     const rng       = mulberry32(seed ^ 0x9e3779b9);
@@ -168,23 +170,42 @@ export default function Trees({
 
         // ── Transform ────────────────────────────────────────────────────
         dummy.position.set(jx, height, jz);
-        dummy.rotation.set(0, rng() * Math.PI * 2, 0); // yaw only — pines grow straight
+        const yaw = rng() * Math.PI * 2;
+        dummy.rotation.set(0, yaw, 0); // yaw only — pines grow straight
         dummy.scale.setScalar(finalScale);
         dummy.updateMatrix();
 
+        const instanceRef = {
+          sourceRef: {
+            file: "src/components/Trees.jsx",
+            function: "Trees",
+            line: 178, // Points to this instanceRef construction block
+            args: {
+              x: Number(jx.toFixed(3)),
+              z: Number(jz.toFixed(3)),
+              height: Number(height.toFixed(3)),
+              scale: Number(finalScale.toFixed(3)),
+              yaw: Number(yaw.toFixed(3)),
+            },
+          }
+        };
+
         colorGroupMatrices[colorIdx].push(dummy.matrix.clone());
+        colorGroupSourceRefs[colorIdx].push(instanceRef);
+
         trunkMatrices.push(dummy.matrix.clone());
+        trunkSourceRefs.push(instanceRef);
 
         placed++;
         if (placed >= count) break outerLoop;
       }
     }
 
-    return { colorGroupMatrices, trunkMatrices };
+    return { colorGroupMatrices, trunkMatrices, colorGroupSourceRefs, trunkSourceRefs };
   }, [parsedMeshes, terrainSize, count, seed]);
 
   const { trunkGeos, foliageGeos, foliageMaterials, trunkMaterial } = parsedMeshes;
-  const { colorGroupMatrices, trunkMatrices } = instancedData;
+  const { colorGroupMatrices, trunkMatrices, colorGroupSourceRefs, trunkSourceRefs } = instancedData;
 
   // Use the first available geometry for each part (GLB may have one of each)
   const foliageGeo = foliageGeos[0];
@@ -199,6 +220,7 @@ export default function Trees({
           geometry={trunkGeo}
           material={trunkMaterial}
           matrices={trunkMatrices}
+          sourceRefs={trunkSourceRefs}
         />
       )}
 
@@ -210,6 +232,7 @@ export default function Trees({
             geometry={foliageGeo}
             material={mat}
             matrices={colorGroupMatrices[i]}
+            sourceRefs={colorGroupSourceRefs[i]}
           />
         )
       )}
@@ -220,14 +243,20 @@ export default function Trees({
 // ─────────────────────────────────────────────────────────────────────────────
 // INSTANCED MESH HELPER
 // ─────────────────────────────────────────────────────────────────────────────
-function InstancedTreeMesh({ geometry, material, matrices }) {
+function InstancedTreeMesh({ geometry, material, matrices, sourceRefs }) {
   const meshRef = useRef();
 
   useEffect(() => {
     if (!meshRef.current || !matrices?.length) return;
     matrices.forEach((m, i) => meshRef.current.setMatrixAt(i, m));
     meshRef.current.instanceMatrix.needsUpdate = true;
-  }, [matrices]);
+    meshRef.current.computeBoundingBox();
+    meshRef.current.computeBoundingSphere();
+    
+    if (sourceRefs) {
+      meshRef.current.userData.instanceSourceRefs = sourceRefs;
+    }
+  }, [matrices, sourceRefs]);
 
   if (!matrices?.length) return null;
 
