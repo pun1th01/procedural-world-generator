@@ -3,13 +3,13 @@ import { useFrame, extend } from '@react-three/fiber'
 import { shaderMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 
-const WATER_LEVEL = -13
+const WATER_LEVEL = -13, WATER_DEEP_COLOR = '#1a4a5c', WATER_SHALLOW_COLOR = '#3a8fa3'
 
 const WaterMaterial = shaderMaterial(
   {
     uTime: 0,
-    uDeepColor: new THREE.Color('#1a4a5c'),
-    uShallowColor: new THREE.Color('#3a8fa3'),
+    uDeepColor: new THREE.Color(WATER_DEEP_COLOR),
+    uShallowColor: new THREE.Color(WATER_SHALLOW_COLOR),
   },
   // vertex shader
   `
@@ -77,6 +77,25 @@ export default function Water({ terrainSize = 380 }) {
       position={[0, WATER_LEVEL, 0]}
       renderOrder={2}
       frustumCulled={false}
+      userData={{
+        sourceRef: {
+          file: 'src/components/Water.jsx',
+          function: 'Water',
+          line: 6, // Points to the merged constant declaration line
+          args: {
+            waterLevel: WATER_LEVEL,
+            deepColor: WATER_DEEP_COLOR,
+            shallowColor: WATER_SHALLOW_COLOR,
+          },
+          // Display keys are camelCase; the constants are declared
+          // SCREAMING_CASE. editSource matches the declared identifier.
+          argSources: {
+            waterLevel: 'WATER_LEVEL',
+            deepColor: 'WATER_DEEP_COLOR',
+            shallowColor: 'WATER_SHALLOW_COLOR',
+          }
+        }
+      }}
     >
       <waterMaterial
         ref={materialRef}
