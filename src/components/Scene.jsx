@@ -49,7 +49,7 @@ export default function Scene({ seed, timeOfDay = 12 }) {
 
   return (
     <>
-      {/* <SelectionHighlight /> */}
+      <SelectionHighlight />
       {/* Adaptive pixel ratio — lowers DPR when FPS drops, huge win on 2GB VRAM */}
       <AdaptiveDpr pixelated />
 
