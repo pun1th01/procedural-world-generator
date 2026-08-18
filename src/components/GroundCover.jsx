@@ -251,6 +251,8 @@ export default function GroundCover({
     const dummy = new THREE.Object3D();
     const grassMatrices = Array.from({ length: 3 }, () => []);
     const bushMatrices = Array.from({ length: 2 }, () => []);
+    const grassSourceRefs = Array.from({ length: 3 }, () => []);
+    const bushSourceRefs = Array.from({ length: 2 }, () => []);
     const half = terrainSize / 2;
     const spacing = 3.9;
     let placedGrass = 0;
@@ -274,10 +276,27 @@ export default function GroundCover({
           const heightScale = (0.86 + rng() * 0.48) * (0.82 + altitudeFade * 0.18);
 
           dummy.position.set(x, sample.height + 0.035, z);
-          dummy.rotation.set(0, rng() * TAU, 0);
+          const grassYaw = rng() * TAU;
+          dummy.rotation.set(0, grassYaw, 0);
           dummy.scale.set(patchScale * (0.88 + rng() * 0.26), heightScale, patchScale);
           dummy.updateMatrix();
+
+          const instanceRef = {
+            sourceRef: {
+              file: "src/components/GroundCover.jsx",
+              function: "GroundCover",
+              line: 284, // Points to this instanceRef construction block
+              args: {
+                x: Number(dummy.position.x.toFixed(3)),
+                z: Number(dummy.position.z.toFixed(3)),
+                variant: grassVariant,
+                yaw: Number(grassYaw.toFixed(3)),
+              },
+            }
+          };
+
           grassMatrices[grassVariant].push(dummy.matrix.clone());
+          grassSourceRefs[grassVariant].push(instanceRef);
           placedGrass++;
         }
 
@@ -295,14 +314,31 @@ export default function GroundCover({
             sample.height + 0.025,
             z + (rng() - 0.5) * 1.4,
           );
-          dummy.rotation.set(0, rng() * TAU, 0);
+          const bushYaw = rng() * TAU;
+          dummy.rotation.set(0, bushYaw, 0);
           dummy.scale.set(
             bushScale * (1.0 + rng() * 0.32),
             bushScale * (0.88 + rng() * 0.22),
             bushScale * (0.92 + rng() * 0.30),
           );
           dummy.updateMatrix();
+
+          const instanceRef = {
+            sourceRef: {
+              file: "src/components/GroundCover.jsx",
+              function: "GroundCover",
+              line: 326, // Points to this instanceRef construction block
+              args: {
+                x: Number(dummy.position.x.toFixed(3)),
+                z: Number(dummy.position.z.toFixed(3)),
+                variant: bushVariant,
+                yaw: Number(bushYaw.toFixed(3)),
+              },
+            }
+          };
+
           bushMatrices[bushVariant].push(dummy.matrix.clone());
+          bushSourceRefs[bushVariant].push(instanceRef);
           placedBush++;
         }
 
@@ -310,7 +346,7 @@ export default function GroundCover({
       }
     }
 
-    return { grassMatrices, bushMatrices };
+    return { grassMatrices, bushMatrices, grassSourceRefs, bushSourceRefs };
   }, [terrainSize, grassCount, bushCount, seed]);
 
   return (
@@ -321,6 +357,7 @@ export default function GroundCover({
           geometry={geometry}
           material={assets.grassMaterial}
           matrices={instancedData.grassMatrices[index]}
+          sourceRefs={instancedData.grassSourceRefs[index]}
         />
       ))}
       {assets.bushGeometries.map((geometry, index) => (
@@ -329,13 +366,14 @@ export default function GroundCover({
           geometry={geometry}
           material={assets.bushMaterial}
           matrices={instancedData.bushMatrices[index]}
+          sourceRefs={instancedData.bushSourceRefs[index]}
         />
       ))}
     </group>
   );
 }
 
-function InstancedGroundCoverMesh({ geometry, material, matrices }) {
+function InstancedGroundCoverMesh({ geometry, material, matrices, sourceRefs }) {
   const meshRef = useRef();
 
   useEffect(() => {
@@ -345,7 +383,11 @@ function InstancedGroundCoverMesh({ geometry, material, matrices }) {
     meshRef.current.instanceMatrix.needsUpdate = true;
     meshRef.current.computeBoundingBox();
     meshRef.current.computeBoundingSphere();
-  }, [matrices]);
+
+    if (sourceRefs) {
+      meshRef.current.userData.instanceSourceRefs = sourceRefs;
+    }
+  }, [matrices, sourceRefs]);
 
   if (!matrices?.length) return null;
 
