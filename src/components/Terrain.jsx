@@ -66,7 +66,9 @@ export default function Terrain({
 
     positions.needsUpdate = true;
     geo.setAttribute('terrainMasks', new THREE.BufferAttribute(terrainMasks, 3));
-    geo = geo.toNonIndexed();
+    // Kept indexed: the shader derives flat normals and the per-face hash from
+    // dFdx/dFdy (screen-space), so toNonIndexed() bought nothing while costing
+    // ~6x the vertices. Normals must be computed while indexed to stay smooth.
     geo.computeVertexNormals();
 
     return geo;
