@@ -1,6 +1,6 @@
 # Weather System v2 — Rebuild Notes
 
-> Weather removed from project scope as of 2026-08-16 after v2 rebuild introduced a new mount-transition bug; deprioritized in favor of Click-to-Source dogfooding on normals ordering and lake bed clamp regressions. Revisit only if time permits after Stage 4 core goals are met.
+> Weather removed from project scope as of 2026-08-16 after a v2 rebuild introduced a new mount-transition bug. Stage 4 has since closed with both of its other regressions resolved (normals ordering and the lake bed clamp), and weather explicitly moved **out of scope** as a deliberate decision rather than an unresolved bug. It is recorded as a possible future feature with no scheduled stage. See `docs/architecture/stage4-exit-condition.md` in the click-to-source repository.
 
 > This document preserves findings from the v1 weather implementation and two
 > prior diagnosis passes. Reference this when rebuilding the weather system to
